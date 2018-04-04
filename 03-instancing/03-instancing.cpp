@@ -5,12 +5,11 @@
    $Id$
  */
 
+#include <stdio.h>
+#include <windows.h>
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-
-#include <stdio.h>
-
-#include <windows.h>
 
 #include "LoadShaders.h"
 #include "vbm.h"
