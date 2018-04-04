@@ -1,4 +1,3 @@
-#define _CRT_SECURE_NO_WARNINGS
 
 #include "vbm.h"
 #include <stdio.h>
@@ -87,7 +86,7 @@ bool VBObject::LoadFromVBM(const char * filename, int vertexIndex, int normalInd
          else if(attribIndex == 2)
             attribIndex = texCoord0Index;
 
-        glVertexAttribPointer(attribIndex, m_attrib[i].components, m_attrib[i].type, GL_FALSE, 0, (GLvoid *)total_data_size);
+        glVertexAttribPointer(attribIndex, m_attrib[i].components, m_attrib[i].type, GL_FALSE, 0, (GLvoid *)(unsigned long long)total_data_size);
         glEnableVertexAttribArray(attribIndex);
         total_data_size += m_attrib[i].components * sizeof(GLfloat) * header->num_vertices;
     }
