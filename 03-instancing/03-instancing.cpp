@@ -18,8 +18,10 @@ float aspect;
 
 GLuint color_buffer;
 GLuint model_matrix_buffer;
+GLuint color_tbo;
+GLuint model_matrix_tbo;
 GLuint render_prog;
-GLint model_matrix_loc;
+
 GLint view_matrix_loc;
 GLint projection_matrix_loc;
 
@@ -48,11 +50,21 @@ void Initialize()
     view_matrix_loc = glGetUniformLocation(render_prog, "view_matrix");
     projection_matrix_loc = glGetUniformLocation(render_prog, "projection_matrix");
 
+    // Set up the TBO samplers
+    GLuint color_tbo_loc = glGetUniformLocation(render_prog, "color_tbo");
+    GLuint model_matrix_tbo_loc = glGetUniformLocation(render_prog, "model_matrix_tbo");
+
+    // Set them to the right texture unit indices
+    glUniform1i(color_tbo_loc, 0);
+    glUniform1i(model_matrix_tbo_loc, 1);
+
     // Load the object
     object.LoadFromVBM("armadillo_low.vbm", 0, 1, 2);
 
-    // Bind its vertex array object so that we can append the instanced attributes
-    object.BindVertexArray();
+    /*
+
+    THIS IS COMMENTED OUT HERE BECAUSE THE VBM OBJECT TAKES
+    CARE OF IT FOR US
 
     // Get the locations of the vertex attributes in 'prog', which is the
     // (linked) program object that we're going to be rendering with. Note
@@ -60,22 +72,26 @@ void Initialize()
     // all the attributes in our vertex shader. This code could be made
     // more concise by assuming the vertex attributes are where we asked
     // the compiler to put them.
-    int position_loc = glGetAttribLocation(render_prog, "position");
-    int normal_loc = glGetAttribLocation(render_prog, "normal");
-    int color_loc = glGetAttribLocation(render_prog, "color");
-    int matrix_loc = glGetAttribLocation(render_prog, "model_matrix");
+    int position_loc    = glGetAttribLocation(prog, "position");
+    int normal_loc      = glGetAttribLocation(prog, "normal");
 
-    // Configure the regular vertex attribute arrays - position and color.
-    /*
-    // This is commented out here because the VBM object takes care
-    // of it for us.
+    // Configure the regular vertex attribute arrays - position and normal.
     glBindBuffer(GL_ARRAY_BUFFER, position_buffer);
     glVertexAttribPointer(position_loc, 4, GL_FLOAT, GL_FALSE, 0, NULL);
     glEnableVertexAttribArray(position_loc);
     glBindBuffer(GL_ARRAY_BUFFER, normal_buffer);
     glVertexAttribPointer(normal_loc, 3, GL_FLOAT, GL_FALSE, 0, NULL);
     glEnableVertexAttribArray(normal_loc);
+
     */
+
+    // Now we set up the TBOs for the instance colors and the model matrices...
+
+    // First, create the TBO to store colors, bind a buffer to it and initialize
+    // its format. The buffer has previously been created and sized to store one
+    // vec4 per-instance.
+    glGenTextures(1, &color_tbo);
+    glBindTexture(GL_TEXTURE_BUFFER, color_tbo);
 
     // Generate the colors of the objects
     glm::vec4 colors[INSTANCE_COUNT];
@@ -92,44 +108,23 @@ void Initialize()
         colors[n][3] = 1.0f;
     }
 
+    // Create the buffer, initialize it and attach it to the buffer texture
     glGenBuffers(1, &color_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(colors), colors, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_TEXTURE_BUFFER, color_buffer);
+    glBufferData(GL_TEXTURE_BUFFER, sizeof(colors), colors, GL_STATIC_DRAW);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, color_buffer);
 
-    // Now we set up the color array. We want each instance of our geometry
-    // to assume a different color, so we'll just pack colors into a buffer
-    // object and make an instanced vertex attribute out of it.
-    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
-    glVertexAttribPointer(color_loc, 4, GL_FLOAT, GL_FALSE, 0, NULL);
-    glEnableVertexAttribArray(color_loc);
-    // This is the important bit... set the divisor for the color array to
-    // 1 to get OpenGL to give us a new value of 'color' per-instance
-    // rather than per-vertex.
-    glVertexAttribDivisor(color_loc, 1);
-
-    // Likewise, we can do the same with the model matrix. Note that a
-    // matrix input to the vertex shader consumes N consecutive input
-    // locations, where N is the number of columns in the matrix. So...
-    // we have four vertex attributes to set up.
+    // Now do the same thing with a TBO for the model matrices. The buffer object
+    // (model_matrix_buffer) has been created and sized to store one mat4 per-
+    // instance.
+    glGenTextures(1, &model_matrix_tbo);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_BUFFER, model_matrix_tbo);
     glGenBuffers(1, &model_matrix_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, model_matrix_buffer);
-    glBufferData(GL_ARRAY_BUFFER, INSTANCE_COUNT * sizeof(glm::mat4), NULL, GL_DYNAMIC_DRAW);
-    // Loop over each column of the matrix...
-    for (int i = 0; i < 4; i++)
-    {
-        // Set up the vertex attribute
-        glVertexAttribPointer(matrix_loc + i,              // Location
-                              4, GL_FLOAT, GL_FALSE,       // vec4
-                              sizeof(glm::mat4),                // Stride
-                              (void *)(sizeof(glm::vec4) * i)); // Start offset
-                                                           // Enable it
-        glEnableVertexAttribArray(matrix_loc + i);
-        // Make it instanced
-        glVertexAttribDivisor(matrix_loc + i, 1);
-    }
-
-    // Done (unbind the object's VAO)
-    glBindVertexArray(0);
+    glBindBuffer(GL_TEXTURE_BUFFER, model_matrix_buffer);
+    glBufferData(GL_TEXTURE_BUFFER, INSTANCE_COUNT * sizeof(glm::mat4), NULL, GL_DYNAMIC_DRAW);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, model_matrix_buffer);
+    glActiveTexture(GL_TEXTURE0);
 }
 
 static inline int min(int a, int b)
@@ -148,19 +143,8 @@ void Display()
     static const glm::vec3 Z(0.0f, 0.0f, 1.0f);
     int n;
 
-    // Clear
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // Setup
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-
-    // Bind the weight VBO and change its data
-    glBindBuffer(GL_ARRAY_BUFFER, model_matrix_buffer);
-
     // Set model matrices for each instance
-    glm::mat4 * matrices = (glm::mat4 *)glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
+    glm::mat4 matrices[INSTANCE_COUNT];
 
     for (n = 0; n < INSTANCE_COUNT; n++)
     {
@@ -174,7 +158,17 @@ void Display()
             glm::translate(glm::mat4(), glm::vec3(10.0f + a, 40.0f + b, 50.0f + c));
     }
 
-    glUnmapBuffer(GL_ARRAY_BUFFER);
+    // Bind the weight VBO and change its data
+    glBindBuffer(GL_TEXTURE_BUFFER, model_matrix_buffer);
+    glBufferData(GL_TEXTURE_BUFFER, sizeof(matrices), matrices, GL_DYNAMIC_DRAW);
+
+    // Clear
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // Setup
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
 
     // Activate instancing program
     glUseProgram(render_prog);
@@ -205,7 +199,7 @@ int main(int argc, char** argv)
     aspect = float(height) / float(width);
 
     glfwInit();
-    GLFWwindow* window = glfwCreateWindow(width, height, "Instancing Example", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(width, height, "gl_InstanceID Example", NULL, NULL);
     glfwMakeContextCurrent(window);
     glewExperimental = GL_TRUE;
     glewInit();

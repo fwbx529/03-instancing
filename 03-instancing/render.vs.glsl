@@ -1,4 +1,4 @@
-#version 330
+#version 410
 
 // 'position' and 'normal' are regular vertex attributes
 layout (location = 0) in vec4 position;
@@ -7,14 +7,14 @@ layout (location = 1) in vec3 normal;
 // Color is a per-instance attribute
 layout (location = 2) in vec4 color;
 
-// model_matrix will be used as a per-instance transformation
-// matrix. Note that a mat4 consumes 4 consecutive locations, so
-// this will actually sit in locations, 3, 4, 5, and 6.
-layout (location = 3) in mat4 model_matrix;
-
 // The view matrix and the projection matrix are constant across a draw
 uniform mat4 view_matrix;
 uniform mat4 projection_matrix;
+
+// These are the TBOs that hold per-instance colors and per-instance
+// model matrices
+uniform samplerBuffer color_tbo;
+uniform samplerBuffer model_matrix_tbo;
 
 // The output of the vertex shader (matched to the fragment shader)
 out VERTEX
@@ -26,6 +26,22 @@ out VERTEX
 // Ok, go!
 void main(void)
 {
+    // Use gl_InstanceID to obtain the instance color from the color TBO
+    vec4 color = texelFetch(color_tbo, gl_InstanceID);
+
+    // Generating the model matrix is more complex because you can't
+    // store mat4 data in a TBO. Instead, we need to store each matrix
+    // as four vec4 variables and assemble the matrix in the shader.
+    // First, fetch the four columns of the matrix (remember, matrices are
+    // stored in memory in column-primary order).
+    vec4 col1 = texelFetch(model_matrix_tbo, gl_InstanceID * 4);
+    vec4 col2 = texelFetch(model_matrix_tbo, gl_InstanceID * 4 + 1);
+    vec4 col3 = texelFetch(model_matrix_tbo, gl_InstanceID * 4 + 2);
+    vec4 col4 = texelFetch(model_matrix_tbo, gl_InstanceID * 4 + 3);
+
+    // Now assemble the four columns into a matrix.
+    mat4 model_matrix = mat4(col1, col2, col3, col4);
+
     // Construct a model-view matrix from the uniform view matrix
     // and the per-instance model matrix.
     mat4 model_view_matrix = view_matrix * model_matrix;
